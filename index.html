@@ -214,11 +214,15 @@ $('serverCheck').addEventListener('click', async ()=>{
   }catch(e){ $('status').innerHTML = `<span class="err">${e.message||e}</span>`; }
 });
 
-$('previewVoice').addEventListener('click', ()=>{
-  const sel = $('voiceSelect'); const opt = sel.options[sel.selectedIndex];
-  if(!opt || !opt.dataset.preview){ $('status').textContent='Giọng này không có preview.'; return; }
-  const audio = new Audio(opt.dataset.preview); audio.play();
-});
+const pv = $('previewVoice');
+if (pv) {
+  pv.addEventListener('click', ()=>{
+    const sel = $('voiceSelect'); const opt = sel.options[sel.selectedIndex];
+    if(!opt || !opt.dataset.preview){ $('status').textContent='Giọng này không có preview.'; return; }
+    new Audio(opt.dataset.preview).play();
+  });
+}
+
 
 function parseLineWithOverrides(raw){
   // "text ... || key=value; key2=value2"
@@ -245,7 +249,7 @@ function parseLineWithOverrides(raw){
 
 $('gen').addEventListener('click', async ()=>{
   const raw = $('text').value;
- const lines = $('batch').checked? raw.split(/\r?\n/).map(s=>s.trim()).filter(Boolean): [raw.trim()];
+ const lines = $('batch').checked? raw.split(/\r?\n/).map(s=>s.trim()).filter(Boolean):[raw.trim()];
   if (lines.length === 0) {
     $('status').innerHTML = '<span class="err">Chưa có nội dung.</span>';
     return;
@@ -330,6 +334,7 @@ $('zip').addEventListener('click', async ()=>{
 </script>
 </body>
 </html>
+
 
 
 
