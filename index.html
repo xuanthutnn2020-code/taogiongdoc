@@ -28,18 +28,20 @@
     .right{display:flex;gap:8px}
     .ok{color:var(--ok)} .err{color:var(--err)} .muted{color:var(--muted)}
     .small{font-size:12px;padding:6px 10px}
+    .hint{font-size:12px;color:#9bb2c8}
   </style>
 </head>
 <body>
 <div class="wrap">
   <div class="card">
     <h1>ElevenLabs TTS – Web Client</h1>
-    <div class="sub">Frontend chạy trên GitHub Pages. Backend bảo mật chạy trên Cloudflare Worker. Không lộ API key.</div>
+    <div class="sub">Frontend chạy trên GitHub Pages. Backend bảo mật chạy trên Cloudflare Worker. <b>Không paste API key ở đây</b>; API key đặt trong Worker Secrets.</div>
 
     <div class="row3">
       <div>
         <label>API Base (Worker URL)</label>
         <input id="apiBase" type="text" placeholder="https://your-worker.workers.dev" />
+        <div class="hint">Ví dụ đúng: <code>https://abcxyz.workers.dev</code>. Nếu bạn dán chuỗi <code>sk_...</code> ở đây sẽ lỗi.</div>
       </div>
       <div>
         <label>Model</label>
@@ -49,6 +51,7 @@
         </select>
       </div>
       <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+        <button id="serverCheck" class="btn small" style="height:40px">🩺 Kiểm tra server</button>
         <button id="loadVoices" class="btn small" style="height:40px">🔁 Tải danh sách giọng</button>
         <button id="refreshVoices" class="btn sec small" style="height:40px">↻ Làm mới</button>
         <button id="clearCache" class="btn sec small" style="height:40px">🗑️ Xoá cache</button>
@@ -91,10 +94,24 @@
 
     <label>Văn bản (mỗi dòng là 1 clip nếu bật Batch)</label>
     <textarea id="text" placeholder="Nhập nội dung...
-Dòng 2 ...
+Dòng 2 ... || voice_id=abc123; stability=0.4; style=0.2
 Dòng 3 ..."></textarea>
+    <div class="hint">Override từng dòng: thêm sau dấu <code>||</code> với các cặp <code>key=value</code> phân tách bằng dấu chấm phẩy. Hỗ trợ: <code>voice_id</code>, <code>model_id</code>, <code>stability</code>, <code>similarity_boost</code>, <code>style</code>, <code>use_speaker_boost</code>.</div>
 
+    <hr style="border-color:#1f2940; margin:18px 0"/>
     <div class="row">
+      <div>
+        <label>Google Sheet (CSV export URL)</label>
+        <input id="sheetUrl" type="text" placeholder="https://docs.google.com/spreadsheets/d/ID/gviz/tq?tqx=out:csv" />
+        <div class="hint">Share sheet: Anyone with link → Viewer. Nếu là link xem bình thường, bấm “Load CSV” sẽ tự chuyển sang CSV.</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:flex-end">
+        <button id="sheetLoad" class="btn sec small" style="height:40px">📥 Load CSV</button>
+        <button id="sheetRun" class="btn small" style="height:40px">▶️ Chạy từ Sheet</button>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:10px">
       <button id="gen" class="btn">▶️ Generate</button>
       <button id="zip" class="btn sec">⬇️ Tải ZIP</button>
     </div>
@@ -111,7 +128,7 @@ $('apiBase').value = API_BASE;
 $('apiBase').addEventListener('input', e=> localStorage.setItem('apiBase', e.target.value.trim()));
 
 // ===== Cache voices =====
-const CACHE_KEY = 'eleven_voices_cache_v1';
+const CACHE_KEY = 'eleven_voices_cache_v2';
 const LAST_VOICE_KEY = 'lastVoiceId';
 const MAX_AGE_MS = 24*60*60*1000; // 24h
 
@@ -161,7 +178,8 @@ async function loadVoices(forceNetwork=false){
     $('cacheNote').textContent = 'Đã lưu cache (mới)';
   }catch(e){
     console.error(e);
-    if(cache){ fillVoices(cache.data); $('cacheNote').textContent = 'Dùng cache do lỗi mạng'; }
+    const cache2 = readCache();
+    if(cache2){ fillVoices(cache2.data); $('cacheNote').textContent = 'Dùng cache do lỗi mạng'; }
     else $('voiceSelect').innerHTML = '<option value="">Lỗi tải danh sách giọng</option>';
   }
 }
@@ -171,26 +189,66 @@ $('refreshVoices').addEventListener('click', ()=>loadVoices(true));
 $('clearCache').addEventListener('click', ()=>{ localStorage.removeItem(CACHE_KEY); $('cacheNote').textContent='Đã xoá cache'; });
 $('voiceSelect').addEventListener('change', e=>{ const id = e.target.value; if(id){ $('voiceId').value = id; localStorage.setItem(LAST_VOICE_KEY, id); }});
 
+$('serverCheck').addEventListener('click', async ()=>{
+  const api = $('apiBase').value.trim(); if(!api){ alert('Nhập API Base (Worker URL)'); return; }
+  $('status').textContent = 'Đang kiểm tra...';
+  try{
+    const r = await fetch(api + '/status');
+    const data = await r.json();
+    if(!r.ok) throw new Error(data.detail || r.statusText);
+    const msg = [
+      `✅ Server OK (keys: ${data.keys || '?'})`,
+      data.subscription?`plan: ${data.subscription.tier||data.subscription.plan||'n/a'}`:'',
+      data.subscription&&data.subscription.character_limit!=null?`limit: ${data.subscription.character_limit}`:'',
+      data.subscription&&data.subscription.character_count!=null?`used: ${data.subscription.character_count}`:''
+    ].filter(Boolean).join(' · ');
+    $('status').textContent = msg || '✅ Server OK';
+  }catch(e){ $('status').innerHTML = `<span class="err">${e.message||e}</span>`; }
+});
+
 $('previewVoice').addEventListener('click', ()=>{
   const sel = $('voiceSelect'); const opt = sel.options[sel.selectedIndex];
   if(!opt || !opt.dataset.preview){ $('status').textContent='Giọng này không có preview.'; return; }
   const audio = new Audio(opt.dataset.preview); audio.play();
 });
 
-async function ttsOne(text, index){
+function parseLineWithOverrides(raw){
+  // "text ... || key=value; key2=value2"
+  const parts = raw.split('||');
+  const text = parts[0].trim();
+  const over = (parts[1]||'').trim();
+  const cfg = {};
+  if(over){
+    over.split(';').forEach(pair=>{
+      const p = pair.trim(); if(!p) return; const [k,v] = p.split('=').map(s=>s.trim()); if(!k) return; cfg[k] = v;
+    });
+  }
+  // Chuẩn hoá kiểu
+  if(cfg.stability) cfg.stability = parseFloat(cfg.stability);
+  if(cfg.similarity_boost) cfg.similarity_boost = parseFloat(cfg.similarity_boost);
+  if(cfg.style) cfg.style = parseFloat(cfg.style);
+  if(cfg.use_speaker_boost) cfg.use_speaker_boost = /^(1|true|yes|y)$/i.test(cfg.use_speaker_boost);
+  return { text, cfg };
+}
+
+function mergeSettings(base, cfg){
+  const v = JSON.parse(JSON.stringify(base));
+  for(const k of ['stability','similarity_boost','style','use_speaker_boost']){
+    if(cfg[k]!==undefined){ v[k] = cfg[k]; }
+  }
+  return v;
+}
+
+async function ttsOne(text, index, opts={}){
   const api = $('apiBase').value.trim(); if(!api) throw new Error('Thiếu API Base (Worker URL)');
-  const voiceId = $('voiceId').value.trim(); if(!voiceId) throw new Error('Thiếu Voice ID');
-  const modelId = $('modelId').value;
-  const body = { text, voice_id: voiceId, model_id: modelId, voice_settings: voiceSettings() };
+  const modelId = opts.model_id || $('modelId').value;
+  const voiceId = opts.voice_id || $('voiceId').value.trim(); if(!voiceId) throw new Error('Thiếu Voice ID');
+  const vs = mergeSettings(voiceSettings(), opts);
+  const body = { text, voice_id: voiceId, model_id: modelId, voice_settings: vs };
   const t0 = performance.now();
   const r = await fetch(api + '/tts', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
-  if(!r.ok){
-    let errTxt = await r.text(); try{ const j = JSON.parse(errTxt); errTxt = (j.detail && (j.detail.message||j.detail)) || errTxt; }catch{}
-    throw new Error('HTTP'+r.status+': '+errTxt);
-  }
-  const blob = await r.blob(); const url = URL.createObjectURL(blob);
-  const name = `clip_${String(index).padStart(3,'0')}.mp3`;
-  return { url, blob, name, ms: Math.round(performance.now()-t0) };
+  if(!r.ok){ let errTxt = await r.text(); try{ const j = JSON.parse(errTxt); errTxt = (j.detail && (j.detail.message||j.detail)) || errTxt; }catch{}; throw new Error('HTTP'+r.status+': '+errTxt); }
+  const blob = await r.blob(); const url = URL.createObjectURL(blob); const name = `clip_${String(index).padStart(3,'0')}.mp3`; return { url, blob, name, ms: Math.round(performance.now()-t0) };
 }
 
 function addClip(c){
@@ -203,16 +261,68 @@ function addClip(c){
 }
 
 $('gen').addEventListener('click', async ()=>{
-  const txt = $('text').value; const lines = $('batch').checked ? txt.split(/
-/).map(s=>s.trim()).filter(Boolean) : [txt.trim()];
+  const raw = $('text').value;
+  const lines = $('batch').checked ? raw.split(/
+/).map(s=>s.trim()).filter(Boolean) : [raw.trim()];
   if(lines.length===0){ $('status').innerHTML='<span class="err">Chưa có nội dung.</span>'; return; }
   $('gen').disabled=true; $('status').textContent='Đang tạo '+lines.length+' clip...';
   let ok=0, fail=0;
   for(let i=0;i<lines.length;i++){
-    try{ const c = await ttsOne(lines[i], i+1); addClip(c); ok++; $('status').innerHTML=`<span class="ok">OK ${ok}</span> · <span class="err">Lỗi ${fail}</span>`; }
-    catch(e){ console.error(e); fail++; $('status').innerHTML=`<span class="ok">OK ${ok}</span> · <span class="err">Lỗi ${fail}</span> · ${e.message}`; }
+    try{
+      const {text,cfg} = parseLineWithOverrides(lines[i]);
+      const c = await ttsOne(text, i+1, cfg); addClip(c); ok++; $('status').innerHTML=`<span class="ok">OK ${ok}</span> · <span class="err">Lỗi ${fail}</span>`;
+    }catch(e){ console.error(e); fail++; $('status').innerHTML=`<span class="ok">OK ${ok}</span> · <span class="err">Lỗi ${fail}</span> · ${e.message}`; }
   }
   $('gen').disabled=false;
+});
+
+// ===== Google Sheet (CSV) =====
+function toCsvUrl(u){
+  try{
+    const url = new URL(u);
+    if(url.hostname.includes('docs.google.com')){ // chuyển sang CSV
+      const m = url.pathname.match(/\/spreadsheets\/d\/([^\/]+)/); if(m){ return `https://docs.google.com/spreadsheets/d/${m[1]}/gviz/tq?tqx=out:csv`; }
+    }
+  }catch{}
+  return u; // đã là CSV
+}
+
+let SHEET_ROWS = [];
+
+$('sheetLoad').addEventListener('click', async ()=>{
+  const u = toCsvUrl($('sheetUrl').value.trim()); if(!u){ alert('Dán link Sheet trước'); return; }
+  $('status').textContent = 'Đang tải CSV...';
+  try{
+    const mod = await import('https://cdn.jsdelivr.net/npm/papaparse@5.4.1/+esm');
+    const csv = await (await fetch(u)).text();
+    const parsed = mod.parse(csv, { header:true, skipEmptyLines:true });
+    SHEET_ROWS = parsed.data;
+    $('status').textContent = `Đã tải ${SHEET_ROWS.length} dòng từ Sheet.`;
+  }catch(e){ $('status').innerHTML = `<span class="err">${e.message||e}</span>`; }
+});
+
+$('sheetRun').addEventListener('click', async ()=>{
+  if(!SHEET_ROWS.length){ $('status').textContent = 'Chưa load CSV.'; return; }
+  $('status').textContent = 'Đang chạy batch từ Sheet...';
+  let ok=0, fail=0, i=0;
+  for(const row of SHEET_ROWS){
+    i++;
+    const text = (row.text||'').trim(); if(!text) continue;
+    const cfg = {};
+    if(row.voice_id) cfg.voice_id = row.voice_id.trim();
+    if(row.model_id) cfg.model_id = row.model_id.trim();
+    if(row.stability) cfg.stability = parseFloat(row.stability);
+    if(row.similarity_boost) cfg.similarity_boost = parseFloat(row.similarity_boost);
+    if(row.style) cfg.style = parseFloat(row.style);
+    if(row.use_speaker_boost) cfg.use_speaker_boost = /^(1|true|yes|y)$/i.test(String(row.use_speaker_boost));
+    try{
+      const c = await ttsOne(text, i, cfg);
+      // tên file theo filename nếu có
+      if(row.filename){ c.name = row.filename; }
+      addClip(c); ok++;
+      $('status').innerHTML=`<span class="ok">OK ${ok}</span> · <span class="err">Lỗi ${fail}</span>`;
+    }catch(e){ console.error(e); fail++; $('status').innerHTML=`<span class="ok">OK ${ok}</span> · <span class="err">Lỗi ${fail}</span> · ${e.message}`; }
+  }
 });
 
 $('zip').addEventListener('click', async ()=>{
