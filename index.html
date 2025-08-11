@@ -127,6 +127,13 @@ const API_BASE = localStorage.getItem('apiBase') || '';
 $('apiBase').value = API_BASE;
 $('apiBase').addEventListener('input', e=> localStorage.setItem('apiBase', e.target.value.trim()));
 
+// Chuẩn hoá API Base: tự thêm https:// nếu thiếu, bỏ dấu / dư ở cuối
+function apiBase(){
+  let b = $('apiBase').value.trim();
+  if (b && !/^https?:\/\//i.test(b)) b = 'https://' + b;
+  return b.replace(/\/+$/,'');
+}
+
 // ===== Cache voices =====
 const CACHE_KEY = 'eleven_voices_cache_v2';
 const LAST_VOICE_KEY = 'lastVoiceId';
@@ -162,7 +169,7 @@ function fillVoices(list){
 }
 
 async function loadVoices(forceNetwork=false){
-  const api = $('apiBase').value.trim(); if(!api){ alert('Nhập API Base (Worker URL)'); return; }
+  const api = apiBase(); if(!api){ alert('Nhập API Base (Worker URL)'); return; }
   const cache = readCache();
   if(!forceNetwork && cache && (Date.now()-cache.at) < MAX_AGE_MS){
     fillVoices(cache.data);
@@ -190,7 +197,7 @@ $('clearCache').addEventListener('click', ()=>{ localStorage.removeItem(CACHE_KE
 $('voiceSelect').addEventListener('change', e=>{ const id = e.target.value; if(id){ $('voiceId').value = id; localStorage.setItem(LAST_VOICE_KEY, id); }});
 
 $('serverCheck').addEventListener('click', async ()=>{
-  const api = $('apiBase').value.trim(); if(!api){ alert('Nhập API Base (Worker URL)'); return; }
+  const api = apiBase(); if(!api){ alert('Nhập API Base (Worker URL)'); return; }
   $('status').textContent = 'Đang kiểm tra...';
   try{
     const r = await fetch(api + '/status');
@@ -214,55 +221,8 @@ $('previewVoice').addEventListener('click', ()=>{
 
 function parseLineWithOverrides(raw){
   // "text ... || key=value; key2=value2"
-  const parts = raw.split('||');
-  const text = parts[0].trim();
-  const over = (parts[1]||'').trim();
-  const cfg = {};
-  if(over){
-    over.split(';').forEach(pair=>{
-      const p = pair.trim(); if(!p) return; const [k,v] = p.split('=').map(s=>s.trim()); if(!k) return; cfg[k] = v;
-    });
-  }
-  // Chuẩn hoá kiểu
-  if(cfg.stability) cfg.stability = parseFloat(cfg.stability);
-  if(cfg.similarity_boost) cfg.similarity_boost = parseFloat(cfg.similarity_boost);
-  if(cfg.style) cfg.style = parseFloat(cfg.style);
-  if(cfg.use_speaker_boost) cfg.use_speaker_boost = /^(1|true|yes|y)$/i.test(cfg.use_speaker_boost);
-  return { text, cfg };
-}
-
-function mergeSettings(base, cfg){
-  const v = JSON.parse(JSON.stringify(base));
-  for(const k of ['stability','similarity_boost','style','use_speaker_boost']){
-    if(cfg[k]!==undefined){ v[k] = cfg[k]; }
-  }
-  return v;
-}
-
-async function ttsOne(text, index, opts={}){
-  const api = $('apiBase').value.trim(); if(!api) throw new Error('Thiếu API Base (Worker URL)');
-  const modelId = opts.model_id || $('modelId').value;
-  const voiceId = opts.voice_id || $('voiceId').value.trim(); if(!voiceId) throw new Error('Thiếu Voice ID');
-  const vs = mergeSettings(voiceSettings(), opts);
-  const body = { text, voice_id: voiceId, model_id: modelId, voice_settings: vs };
-  const t0 = performance.now();
-  const r = await fetch(api + '/tts', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
-  if(!r.ok){ let errTxt = await r.text(); try{ const j = JSON.parse(errTxt); errTxt = (j.detail && (j.detail.message||j.detail)) || errTxt; }catch{}; throw new Error('HTTP'+r.status+': '+errTxt); }
-  const blob = await r.blob(); const url = URL.createObjectURL(blob); const name = `clip_${String(index).padStart(3,'0')}.mp3`; return { url, blob, name, ms: Math.round(performance.now()-t0) };
-}
-
-function addClip(c){
-  const row = document.createElement('div'); row.className='clip';
-  const left = document.createElement('div'); left.style.flex=1; const au = document.createElement('audio'); au.controls=true; au.src=c.url; left.appendChild(au);
-  const right = document.createElement('div'); right.className='right';
-  const dl = document.createElement('a'); dl.textContent='⬇️'; dl.className='btn sec'; dl.download=c.name; dl.href=c.url; right.appendChild(dl);
-  const tag = document.createElement('span'); tag.className='muted'; tag.textContent=c.name+` · ${c.ms} ms`; right.appendChild(tag);
-  row.appendChild(left); row.appendChild(right); $('clips').prepend(row);
-}
-
-$('gen').addEventListener('click', async ()=>{
-  const raw = $('text').value;
-  const lines = $('batch').checked ? raw.split(/
+  const parts = raw.split(/
+?
 /).map(s=>s.trim()).filter(Boolean) : [raw.trim()];
   if(lines.length===0){ $('status').innerHTML='<span class="err">Chưa có nội dung.</span>'; return; }
   $('gen').disabled=true; $('status').textContent='Đang tạo '+lines.length+' clip...';
