@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ElevenLabs TTS – Safe Web Client</title>
+  <style>
+    :root{--bg:#0b0f17;--card:#121826;--muted:#8aa0b5;--pri:#4f8cff;--ok:#2ecc71;--err:#ff5252}
+    *{box-sizing:border-box} body{margin:0;font:16px/1.4 system-ui,Segoe UI,Roboto,Helvetica,Arial;background:linear-gradient(180deg,#0b0f17,#0f1a2a);color:#e6edf3}
+    .wrap{max-width:980px;margin:40px auto;padding:0 16px}
+    .card{background:var(--card);border:1px solid #1f2940;border-radius:16px;padding:18px 18px 6px;box-shadow:0 8px 40px rgba(0,0,0,.35)}
+    h1{font-size:26px;margin:0 0 14px} .sub{color:var(--muted);font-size:14px;margin-bottom:18px}
+    label{display:block;margin:12px 0 6px;color:#c8d5e4}
+    input[type=text],select,textarea{width:100%;padding:10px 12px;border-radius:12px;border:1px solid #26324b;background:#0c1322;color:#e6edf3}
+    textarea{min-height:120px;resize:vertical}
+    .row{display:grid;gap:12px;grid-template-columns:repeat(2,minmax(0,1fr))}
+    .row3{display:grid;gap:12px;grid-template-columns:repeat(3,minmax(0,1fr))}
+    .range{display:flex;gap:10px;align-items:center}
+    input[type=range]{width:100%}
+    .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:12px;background:var(--pri);color:#fff;border:none;cursor:pointer;font-weight:600}
+    .btn:disabled{opacity:.6;cursor:not-allowed}
+    .btn.sec{background:#26324b;color:#cfe0f5}
+    .pill{display:inline-flex;gap:8px;align-items:center;background:#0e1626;border:1px solid #22304b;color:#cfe0f5;padding:6px 10px;border-radius:999px}
+    .grid{display:grid;gap:12px}
+    .clips{margin-top:14px;display:grid;gap:10px}
+    .clip{border:1px solid #22304b;border-radius:14px;padding:10px;background:#0e1626;display:flex;gap:10px;align-items:center;justify-content:space-between}
+    audio{width:100%}
+    .right{display:flex;gap:8px}
+    .ok{color:var(--ok)} .err{color:var(--err)} .muted{color:var(--muted)}
+    .small{font-size:12px;padding:6px 10px}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>ElevenLabs TTS – Web Client</h1>
+    <div class="sub">Frontend chạy trên GitHub Pages. Backend bảo mật chạy trên Cloudflare Worker. Không lộ API key.</div>
+
+    <div class="row3">
+      <div>
+        <label>API Base (Worker URL)</label>
+        <input id="apiBase" type="text" placeholder="https://your-worker.workers.dev" />
+      </div>
+      <div>
+        <label>Model</label>
+        <select id="modelId">
+          <option value="eleven_flash_v2_5">eleven_flash_v2_5 (nhanh)</option>
+          <option value="eleven_multilingual_v2">eleven_multilingual_v2 (chất lượng)</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+        <button id="loadVoices" class="btn small" style="height:40px">🔁 Tải danh sách giọng</button>
+        <button id="refreshVoices" class="btn sec small" style="height:40px">↻ Làm mới</button>
+        <button id="clearCache" class="btn sec small" style="height:40px">🗑️ Xoá cache</button>
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>Chọn giọng (auto từ Worker)</label>
+        <select id="voiceSelect"></select>
+        <div class="sub" id="cacheNote"></div>
+      </div>
+      <div>
+        <label>Voice ID (có thể sửa thủ công)</label>
+        <input id="voiceId" type="text" placeholder="vd: 21m00Tcm4TlvDq8ikWAM" />
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="range">
+        <label style="min-width:130px">Stability <span class="muted" id="stabVal">0.60</span></label>
+        <input id="stability" type="range" min="0" max="1" step="0.01" value="0.60" />
+      </div>
+      <div class="range">
+        <label style="min-width:130px">Similarity <span class="muted" id="simVal">0.70</span></label>
+        <input id="similarity" type="range" min="0" max="1" step="0.01" value="0.70" />
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="range">
+        <label style="min-width:130px">Style <span class="muted" id="styleVal">0.00</span></label>
+        <input id="style" type="range" min="0" max="1" step="0.01" value="0.00" />
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:28px">
+        <input id="boost" type="checkbox" /> <label for="boost" style="margin:0">use_speaker_boost</label>
+        <span class="pill"><input id="batch" type="checkbox" /> Batch theo dòng</span>
+      </div>
+    </div>
+
+    <label>Văn bản (mỗi dòng là 1 clip nếu bật Batch)</label>
+    <textarea id="text" placeholder="Nhập nội dung...
+Dòng 2 ...
+Dòng 3 ..."></textarea>
+
+    <div class="row">
+      <button id="gen" class="btn">▶️ Generate</button>
+      <button id="zip" class="btn sec">⬇️ Tải ZIP</button>
+    </div>
+
+    <div id="status" class="sub" style="margin-top:10px"></div>
+    <div class="clips" id="clips"></div>
+  </div>
+</div>
+
+<script>
+const $ = (id)=>document.getElementById(id);
+const API_BASE = localStorage.getItem('apiBase') || '';
+$('apiBase').value = API_BASE;
+$('apiBase').addEventListener('input', e=> localStorage.setItem('apiBase', e.target.value.trim()));
+
+// ===== Cache voices =====
+const CACHE_KEY = 'eleven_voices_cache_v1';
+const LAST_VOICE_KEY = 'lastVoiceId';
+const MAX_AGE_MS = 24*60*60*1000; // 24h
+
+const upd = ()=>{
+  $('stabVal').textContent = Number($('stability').value).toFixed(2);
+  $('simVal').textContent = Number($('similarity').value).toFixed(2);
+  $('styleVal').textContent = Number($('style').value).toFixed(2);
+};
+['stability','similarity','style'].forEach(id=>$(id).addEventListener('input',upd)); upd();
+
+function voiceSettings(){
+  const s = parseFloat($('stability').value), sm = parseFloat($('similarity').value), st = parseFloat($('style').value);
+  const vs = { stability: s, similarity_boost: sm };
+  if(st>0) vs.style = st; if($('boost').checked) vs.use_speaker_boost = true; return vs;
+}
+
+function readCache(){ try{ const raw = localStorage.getItem(CACHE_KEY); return raw ? JSON.parse(raw) : null; }catch{return null} }
+function writeCache(list){ localStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), data: list })); }
+function prettyAge(ms){ const h = Math.floor(ms/3600000), m = Math.round((ms%3600000)/60000); return h?`${h}h${m}m`:`${m}m`; }
+
+function fillVoices(list){
+  $('voiceSelect').innerHTML = '<option value="">-- Chọn giọng --</option>';
+  const last = localStorage.getItem(LAST_VOICE_KEY);
+  for(const v of list){
+    const id = v.voice_id || v.id || (v.voice && v.voice.id) || '';
+    const name = v.name || v.display_name || id;
+    const preview = v.preview_url || (v.preview && (v.preview.audio || v.preview.audio_url)) || '';
+    const o = document.createElement('option'); o.value = id; o.textContent = name; if(preview) o.dataset.preview = preview; $('voiceSelect').appendChild(o);
+  }
+  if(last){ $('voiceSelect').value = last; $('voiceId').value = last; }
+}
+
+async function loadVoices(forceNetwork=false){
+  const api = $('apiBase').value.trim(); if(!api){ alert('Nhập API Base (Worker URL)'); return; }
+  const cache = readCache();
+  if(!forceNetwork && cache && (Date.now()-cache.at) < MAX_AGE_MS){
+    fillVoices(cache.data);
+    $('cacheNote').textContent = `Đang dùng cache (${prettyAge(Date.now()-cache.at)} trước)`;
+    return;
+  }
+  $('voiceSelect').innerHTML = '<option value="">Đang tải...</option>';
+  try{
+    const r = await fetch(api + '/voices');
+    if(!r.ok){ const txt = await r.text(); throw new Error('HTTP'+r.status+': '+txt); }
+    const data = await r.json(); const list = data.voices || data || [];
+    writeCache(list); fillVoices(list);
+    $('cacheNote').textContent = 'Đã lưu cache (mới)';
+  }catch(e){
+    console.error(e);
+    if(cache){ fillVoices(cache.data); $('cacheNote').textContent = 'Dùng cache do lỗi mạng'; }
+    else $('voiceSelect').innerHTML = '<option value="">Lỗi tải danh sách giọng</option>';
+  }
+}
+
+$('loadVoices').addEventListener('click', ()=>loadVoices(false));
+$('refreshVoices').addEventListener('click', ()=>loadVoices(true));
+$('clearCache').addEventListener('click', ()=>{ localStorage.removeItem(CACHE_KEY); $('cacheNote').textContent='Đã xoá cache'; });
+$('voiceSelect').addEventListener('change', e=>{ const id = e.target.value; if(id){ $('voiceId').value = id; localStorage.setItem(LAST_VOICE_KEY, id); }});
+
+$('previewVoice').addEventListener('click', ()=>{
+  const sel = $('voiceSelect'); const opt = sel.options[sel.selectedIndex];
+  if(!opt || !opt.dataset.preview){ $('status').textContent='Giọng này không có preview.'; return; }
+  const audio = new Audio(opt.dataset.preview); audio.play();
+});
+
+async function ttsOne(text, index){
+  const api = $('apiBase').value.trim(); if(!api) throw new Error('Thiếu API Base (Worker URL)');
+  const voiceId = $('voiceId').value.trim(); if(!voiceId) throw new Error('Thiếu Voice ID');
+  const modelId = $('modelId').value;
+  const body = { text, voice_id: voiceId, model_id: modelId, voice_settings: voiceSettings() };
+  const t0 = performance.now();
+  const r = await fetch(api + '/tts', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  if(!r.ok){
+    let errTxt = await r.text(); try{ const j = JSON.parse(errTxt); errTxt = (j.detail && (j.detail.message||j.detail)) || errTxt; }catch{}
+    throw new Error('HTTP'+r.status+': '+errTxt);
+  }
+  const blob = await r.blob(); const url = URL.createObjectURL(blob);
+  const name = `clip_${String(index).padStart(3,'0')}.mp3`;
+  return { url, blob, name, ms: Math.round(performance.now()-t0) };
+}
+
+function addClip(c){
+  const row = document.createElement('div'); row.className='clip';
+  const left = document.createElement('div'); left.style.flex=1; const au = document.createElement('audio'); au.controls=true; au.src=c.url; left.appendChild(au);
+  const right = document.createElement('div'); right.className='right';
+  const dl = document.createElement('a'); dl.textContent='⬇️'; dl.className='btn sec'; dl.download=c.name; dl.href=c.url; right.appendChild(dl);
+  const tag = document.createElement('span'); tag.className='muted'; tag.textContent=c.name+` · ${c.ms} ms`; right.appendChild(tag);
+  row.appendChild(left); row.appendChild(right); $('clips').prepend(row);
+}
+
+$('gen').addEventListener('click', async ()=>{
+  const txt = $('text').value; const lines = $('batch').checked ? txt.split(/
+/).map(s=>s.trim()).filter(Boolean) : [txt.trim()];
+  if(lines.length===0){ $('status').innerHTML='<span class="err">Chưa có nội dung.</span>'; return; }
+  $('gen').disabled=true; $('status').textContent='Đang tạo '+lines.length+' clip...';
+  let ok=0, fail=0;
+  for(let i=0;i<lines.length;i++){
+    try{ const c = await ttsOne(lines[i], i+1); addClip(c); ok++; $('status').innerHTML=`<span class="ok">OK ${ok}</span> · <span class="err">Lỗi ${fail}</span>`; }
+    catch(e){ console.error(e); fail++; $('status').innerHTML=`<span class="ok">OK ${ok}</span> · <span class="err">Lỗi ${fail}</span> · ${e.message}`; }
+  }
+  $('gen').disabled=false;
+});
+
+$('zip').addEventListener('click', async ()=>{
+  const clips = [...document.querySelectorAll('.clip a[download]')]; if(!clips.length){$('status').textContent='Chưa có file.'; return;}
+  const JSZip = await import('https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm');
+  const zip = new JSZip.default();
+  for(const a of clips){ const res = await fetch(a.href); zip.file(a.download, await res.arrayBuffer()); }
+  const blob = await zip.generateAsync({type:'blob'});
+  const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href=url; a.download='tts_out.zip'; a.click();
+});
+</script>
+</body>
+</html>
