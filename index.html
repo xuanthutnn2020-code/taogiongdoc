@@ -122,6 +122,7 @@ Dòng 3 ..."></textarea>
 </div>
 
 <script>
+document.addEventListener('DOMContentLoaded', () => {
 const $ = (id)=>document.getElementById(id);
 const API_BASE = localStorage.getItem('apiBase') || '';
 $('apiBase').value = API_BASE;
@@ -221,30 +222,10 @@ $('previewVoice').addEventListener('click', ()=>{
 
 function parseLineWithOverrides(raw){
   // "text ... || key=value; key2=value2"
-  const parts = raw.split('||');
-  const text = parts[0].trim();
-  const over = (parts[1]||'').trim();
-  const cfg = {};
-  if(over){
-    over.split(';').forEach(pair=>{
-      const p = pair.trim(); if(!p) return;
-      const [k,v] = p.split('=').map(s=>s.trim()); if(!k) return;
-      cfg[k] = v;
-    });
-  }
-  // Chuẩn hoá kiểu
-  if(cfg.stability !== undefined) cfg.stability = parseFloat(cfg.stability);
-  if(cfg.similarity_boost !== undefined) cfg.similarity_boost = parseFloat(cfg.similarity_boost);
-  if(cfg.style !== undefined) cfg.style = parseFloat(cfg.style);
-  if(cfg.use_speaker_boost !== undefined) cfg.use_speaker_boost = /^(1|true|yes|y)$/i.test(String(cfg.use_speaker_boost));
-  if(cfg.modelId && !cfg.model_id){ cfg.model_id = cfg.modelId; delete cfg.modelId; }
-  if(cfg.voiceId && !cfg.voice_id){ cfg.voice_id = cfg.voiceId; delete cfg.voiceId; }
-  return { text, cfg };
-}
-
-$('gen').addEventListener('click', async ()=>{
-  const raw = $('text').value;
-  const lines = $('batch').checked? raw.split(/\r?\n/).map(s => s.trim()).filter(Boolean): [raw.trim()];
+  const parts = raw.split(/
+?
+/).map(s=>s.trim()).filter(Boolean)
+    : [raw.trim()];
   if(lines.length===0){ $('status').innerHTML='<span class="err">Chưa có nội dung.</span>'; return; }
   $('gen').disabled=true; $('status').textContent='Đang tạo '+lines.length+' clip...';
   let ok=0, fail=0;
@@ -314,9 +295,11 @@ $('zip').addEventListener('click', async ()=>{
   const blob = await zip.generateAsync({type:'blob'});
   const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href=url; a.download='tts_out.zip'; a.click();
 });
+});
 </script>
 </body>
 </html>
+
 
 
 
