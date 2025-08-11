@@ -245,11 +245,7 @@ function parseLineWithOverrides(raw){
 
 $('gen').addEventListener('click', async ()=>{
   const raw = $('text').value;
-  const lines = $('batch').checked
-    ? raw.split(/
-?
-/).map(s=>s.trim()).filter(Boolean)
-    : [raw.trim()];
+ const lines = $('batch').checked? raw.split(/\r?\n/).map(s=>s.trim()).filter(Boolean): [raw.trim()];
 
   if (lines.length === 0) {
     $('status').innerHTML = '<span class="err">Chưa có nội dung.</span>';
@@ -335,6 +331,7 @@ $('zip').addEventListener('click', async ()=>{
 </script>
 </body>
 </html>
+
 
 
 
